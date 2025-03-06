@@ -14,7 +14,11 @@ const RoomPage = () => {
   const [remoteSocketId, setRemoteSocketId] = useState(null);
   const [myStream, setMyStream] = useState();
   const [remoteStream, setRemoteStream] = useState();
-
+  const [recording, setRecording] = useState(false);
+  const [videoURL, setVideoURL] = useState(null);
+  // const recorderRef = useRef(null);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
   const handleUserJoined = useCallback(({ email, id }) => {
     console.log(`Email ${email} joined room`);
     setRemoteSocketId(id);
@@ -93,7 +97,13 @@ const RoomPage = () => {
   }, []);
 
 
-  const handleEndCall = useCallback(() => {
+  const handleEndCall = useCallback(async() => {
+    console.log("recoding--",recording);
+      
+      if (recording) {
+        console.log("Stopping recording before ending call...");
+        await stopRecording();
+      }
     if (myStream) {
       myStream.getTracks().forEach(track => track.stop()); // Stop local media tracks
       setMyStream(null); // Clear local stream
@@ -110,7 +120,8 @@ const RoomPage = () => {
 
 
   useEffect(() => {
-    socket.on("call:ended", () => {
+    socket.on("call:ended",async() => {
+      
       if (remoteStream) {
         remoteStream.getTracks().forEach(track => track.stop());
         setRemoteStream(null);
@@ -147,11 +158,7 @@ const RoomPage = () => {
     handleNegoNeedFinal,
   ]);
 
-  const [recording, setRecording] = useState(false);
-  const [videoURL, setVideoURL] = useState(null);
-  // const recorderRef = useRef(null);
-  const recorderRef = useRef(null);
-  const streamRef = useRef(null);
+ 
     const startRecording = async () => {
     try {
       // Capture current screen (video + audio)
@@ -186,7 +193,10 @@ recorderRef.current.startRecording();
       // });
 
       // recorderRef.current.startRecording();
-      setRecording(true);
+      setRecording(prev => true);
+
+      console.log("kunjjjj",recording);
+      
     } catch (error) {
       console.error("Error accessing media devices:", error);
     }
@@ -195,40 +205,46 @@ recorderRef.current.startRecording();
   
 
   const stopRecording = () => {
-    if (recorderRef.current) {
-      recorderRef.current.stopRecording(async () => {
-        const blob = recorderRef.current?.getBlob();
-        if (blob) {
-          const file = new File([blob], "recorded-video.webm", { type: "video/webm" });
+    return new Promise((resolve, reject) => {
+      if (recorderRef.current) {
+        recorderRef.current.stopRecording(async () => {
+          const blob = recorderRef.current?.getBlob();
+          if (blob) {
+            const file = new File([blob], "recorded-video.webm", { type: "video/webm" });
   
-          // Upload to Cloudinary
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("upload_preset", "kunjesh"); // Replace with your Cloudinary Upload Preset
-          formData.append("cloud_name", "dp2a3z6fu"); // Replace with your Cloudinary Cloud Name
+            // Upload to Cloudinary
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("upload_preset", "kunjesh"); 
+            formData.append("cloud_name", "dp2a3z6fu");
   
-          try {
-            const response = await axios.post(
-              `https://api.cloudinary.com/v1_1/dp2a3z6fu/video/upload`, 
-              formData
-            );
+            try {
+              const response = await axios.post(
+                "https://api.cloudinary.com/v1_1/dp2a3z6fu/video/upload", 
+                formData
+              );
   
-            console.log("Uploaded video URL:", response.data.secure_url);
-            setVideoURL(response.data.secure_url); // Store Cloudinary URL in state
-          } catch (error) {
-            console.log("kunj",error);
-            console.error("Cloudinary Upload Failed:", error.response?.data || error.message);
-
-            console.error("Upload failed:", error);
+              console.log("Uploaded video URL:", response.data.secure_url);
+              setVideoURL(response.data.secure_url);
+              resolve(); // ✅ Resolve when upload is complete
+            } catch (error) {
+              console.error("Upload failed:", error);
+              reject(error); // ❌ Reject if upload fails
+            }
+          } else {
+            resolve(); // ✅ Resolve if there's no blob
           }
-        }
-      });
-    }
+        });
+      } else {
+        resolve(); // ✅ Resolve if no recorder exists
+      }
   
-    // Stop the stream and release resources
-    streamRef.current?.getTracks().forEach(track => track.stop());
-  setRecording(false);
+      // Stop the stream and release resources
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      setRecording(false);
+    });
   };
+  
 
   return (
     <div>
@@ -253,14 +269,13 @@ recorderRef.current.startRecording();
           <h1>Remote Stream</h1>
           <ReactPlayer
             playing
-            muted
             height="100px"
             width="200px"
             url={remoteStream}
           />
         </>
       )}
-      {myStream && (
+      {myStream &&  (!recording &&
   <button onClick={handleEndCall} style={{ backgroundColor: "red", color: "white" }}>
     End Call
   </button>
